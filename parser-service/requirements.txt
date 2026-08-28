@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+tree-sitter>=0.22.0
+tree-sitter-java>=0.21.0
+sentence-transformers
+neo4j
+psycopg2-binary
+pgvector
+pydantic

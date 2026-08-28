@@ -1,0 +1,113 @@
+# =============================================================
+# QE-RAG-System — .gitignore
+# Covers: Python, Java/Maven, Docker, IDE, and OS artefacts
+# Rule: NO credentials, secrets, or compiled artefacts committed
+# =============================================================
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+*.ipynb
+
+# Sentence-transformers / HuggingFace model cache
+.cache/
+models/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.coveragerc
+
+# mypy / ruff
+.mypy_cache/
+.ruff_cache/
+
+# ── Node.js / Frontend ────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/.output/
+frontend/dist/
+frontend/.nitro/
+frontend/.tanstack/
+.npm
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Java / Maven ──────────────────────────────────────────────
+backend/target/
+test-sandbox/target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+
+# Maven wrapper cache
+.mvn/wrapper/maven-wrapper.jar
+
+# ── Docker / Secrets ──────────────────────────────────────────
+# Never commit .env files that contain real credentials
+.env
+.env.*
+!.env.example
+
+# Docker volumes managed externally — not tracked
+docker-volumes/
+
+# ── IDEs ──────────────────────────────────────────────────────
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# NetBeans
+nbproject/
+nbbuild/
+nbdist/
+
+# ── OS artefacts ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Tree-sitter build artefacts ───────────────────────────────
+# Legacy build-library outputs — spec forbids these anyway
+build/
