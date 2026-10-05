@@ -6,19 +6,47 @@ powered by a local Ollama LLM, with an animated claymorphic web studio (**AutoQE
 
 ---
 
+## Quick Start with Developer Scripts
+
+Use the included cross-platform CLI scripts for single-command management:
+
+```powershell
+# Windows PowerShell
+.\scripts\dev.ps1 up          # Start all containers (pgvector, neo4j, parser, ollama, prometheus, grafana)
+.\scripts\dev.ps1 health      # Verify health probes across all services
+.\scripts\dev.ps1 test        # Run backend, sandbox, and frontend verification test suites
+```
+
+```bash
+# Linux / macOS
+./scripts/dev.sh up
+./scripts/dev.sh health
+./scripts/dev.sh test
+```
+
+> For production deployment instructions, SSL termination, and security hardening, see [DEPLOYMENT.md](file:///d:/Projects/qe-rag-system/DEPLOYMENT.md).
+
+---
+
 ## Architecture at a Glance
 
 ```
 [frontend]       → AutoQE Studio (React/TanStack on Port 3000)
                    • Knowledge Bento & live DB/service health badges
-                   • Dynamic AST Bubble Cloud Graph & Split Code Viewer
-                   • Agent Squad progress animations & live Maven log streaming
+                   • Side-by-Side & Unified Diff Viewer + AST Bubble Map
+                   • Agent Squad progress animations & live SSE/WebSocket terminal streaming
+                   • Client-side test generation run history store (localStorage)
                    ↓
 [parser-service] → FastAPI (Port 8000) → parse Java AST → Neo4j graph + pgvector embeddings
-[backend]        → Spring Boot (Port 8080) → POST /api/v1/generate-tests
+                   • Incremental re-ingestion with batch SHA-256 hash checks
+[backend]        → Spring Boot 3.x (Port 8080)
+                   • Endpoints: POST /generate-tests, POST /generate-tests/batch, POST /generate-tests/async
                    • PlannerAgent → RetrievalAgent (Neo4j + pgvector) → GeneratorAgent (Ollama/Llama3)
+                   • Security: API Key authentication, Bucket4j rate limiting, Path traversal guards
+                   • Observability: Structured JSON logging (Logstash), MDC correlation, Micrometer + OTLP tracing
                    • TestRunnerService → write test → mvn test → self-heal up to 3 retries
                    ↓
+[monitoring]     → Prometheus (Port 9090) + Grafana (Port 3001) for real-time QE pipeline metrics
 [test-sandbox]   → Target Java codebase (com.qe.demo.*) the AI generates tests for
 ```
 
@@ -32,7 +60,7 @@ powered by a local Ollama LLM, with an animated claymorphic web studio (**AutoQE
 | Maven | 3.9+ | or use the included `mvnw` wrapper |
 | Python | 3.11+ | for the parser-service |
 | Node.js & npm | 18+ / 20+ | for the AutoQE Studio frontend |
-| Docker + Docker Compose | latest | for Neo4j and PostgreSQL |
+| Docker + Docker Compose | latest | for Neo4j, pgvector, Prometheus, Grafana |
 | Ollama | latest | https://ollama.com — runs the local LLM (`llama3:8b`) |
 
 ---
@@ -43,17 +71,17 @@ powered by a local Ollama LLM, with an animated claymorphic web studio (**AutoQE
 docker compose up -d
 ```
 
-This starts three containers:
+Starts the local container infrastructure:
 - **`qe_pgvector`** — PostgreSQL + pgvector on port `5432`
 - **`qe_neo4j`** — Neo4j on ports `7474` (browser) and `7687` (bolt)
 - **`qe_parser_service`** — Python FastAPI parser on port `8000`
+- **`qe_prometheus`** — Prometheus TSDB on port `9090`
+- **`qe_grafana`** — Grafana Dashboard on port `3001`
 
 Ensure the local LLM is pulled and running in Ollama:
 ```bash
 ollama run llama3
 ```
-
-> **Neo4j Browser**: http://localhost:7474 (login: `neo4j` / `dev_password`)
 
 ---
 
