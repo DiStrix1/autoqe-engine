@@ -32,6 +32,8 @@ public interface PlannerAgent {
             4. The JUnit 5 test class structure: package statement, class name, required imports.
             5. Any Mockito setup (@Mock, @InjectMocks, @BeforeEach) needed.
             6. Direct alignment with the user-specified testing strategy and directives.
+            7. RETURN-STATEMENT BRANCH COVERAGE: Identify ALL return statements and distinct exit paths in each target method. You MUST explicitly plan at least one test case with concrete input values designed to reach EACH return statement (e.g. if a method has 'return 1;' and 'return -1;', specify input values that trigger 1 AND input values that trigger -1).
+            8. HAPPY-PATH INPUT VALIDATION: For algorithmic methods with loops, swaps, or conditions, trace the logic to supply valid, verified inputs that genuinely produce the positive/success outcome.
             
             Respond with a concise, structured plain-text plan. Do NOT generate Java code.
             """)

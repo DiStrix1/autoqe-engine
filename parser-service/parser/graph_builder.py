@@ -145,11 +145,27 @@ def build_graph(parse_result: ParseResult) -> Tuple[int, int]:
             # --- Phase 3: Batch create CALLS edges ---
             calls_batch: List[Dict[str, str]] = []
             for call_info in parse_result.calls:
-                # Match callee by suffix "#{callee_name}("
-                matched = [
-                    mid for mid in method_id_set
-                    if f"#{call_info.callee_name}(" in mid
-                ]
+                matched: List[str] = []
+
+                # 1. Receiver type known (e.g. OrderRepository or UserService)
+                if call_info.receiver_type:
+                    rec = call_info.receiver_type
+                    matched = [
+                        mid for mid in method_id_set
+                        if (f".{rec}#{call_info.callee_name}(" in mid or mid.startswith(f"{rec}#{call_info.callee_name}("))
+                    ]
+                # 2. Receiver is "this" (unqualified or this.method invocation)
+                elif call_info.receiver == "this":
+                    caller_cls = call_info.caller_id.split("#")[0]
+                    matched = [
+                        mid for mid in method_id_set
+                        if mid.startswith(f"{caller_cls}#{call_info.callee_name}(")
+                    ]
+
+                # Note: We intentionally avoid broadcasting bare method names across all classes
+                # when the receiver is an unknown third-party or external variable, preventing
+                # false-positive graph edges (e.g. getId, toString, build) from polluting Neo4j.
+
                 for callee_id in matched:
                     calls_batch.append({
                         "callerId": call_info.caller_id,

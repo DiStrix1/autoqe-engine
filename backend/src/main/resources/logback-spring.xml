@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true" scanPeriod="30 seconds">
+
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="qe-agent-backend"/>
+
+    <!-- Standard Human-Readable Console Appender (for local / dev) -->
+    <appender name="CONSOLE_DEV" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%blue(%thread)] %cyan(%logger{36}) [%magenta(reqId:%X{requestId:-none})] : %msg%n%throwable</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Structured JSON Console Appender (for production / log collectors) -->
+    <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>requestId</includeMdcKeyName>
+            <includeMdcKeyName>traceId</includeMdcKeyName>
+            <includeMdcKeyName>spanId</includeMdcKeyName>
+            <customFields>{"service":"${appName}"}</customFields>
+        </encoder>
+    </appender>
+
+    <!-- Dev / Default Profile: Human-readable colored output -->
+    <springProfile name="!prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_DEV"/>
+        </root>
+        <logger name="com.qe.agent" level="DEBUG"/>
+    </springProfile>
+
+    <!-- Prod Profile: High-throughput JSON output for ELK / Grafana Loki / CloudWatch -->
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_JSON"/>
+        </root>
+        <logger name="com.qe.agent" level="INFO"/>
+        <logger name="org.springframework.web" level="INFO"/>
+    </springProfile>
+
+</configuration>

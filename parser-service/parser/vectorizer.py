@@ -86,6 +86,10 @@ _SQL_GET_STORED_HASH = """
 SELECT file_hash FROM code_embeddings WHERE method_id = %s LIMIT 1;
 """
 
+_SQL_GET_STORED_HASHES_BATCH = """
+SELECT method_id, file_hash FROM code_embeddings WHERE method_id = ANY(%s);
+"""
+
 _SQL_UPSERT_EMBEDDING = """
 INSERT INTO code_embeddings
     (method_id, class_name, method_name, file_path, method_body, embedding, file_hash)
@@ -168,6 +172,13 @@ def _collect_methods(classes: List[ClassInfo]) -> List[MethodInfo]:
     return methods
 
 
+def _cached_file_hash(cache: Dict[str, str], file_path: str) -> str:
+    """Return the SHA-256 hash for *file_path*, caching results in *cache*."""
+    if file_path not in cache:
+        cache[file_path] = _compute_file_hash(file_path)
+    return cache[file_path]
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -216,24 +227,25 @@ def vectorize_and_store(classes: List[ClassInfo]) -> int:
 
         # Build a cache: file_path -> current SHA-256 hash
         file_hash_cache: Dict[str, str] = {}
-        def _get_file_hash(fp: str) -> str:
-            if fp not in file_hash_cache:
-                file_hash_cache[fp] = _compute_file_hash(fp)
-            return file_hash_cache[fp]
+
+        # Batch fetch all existing method hashes in one query (P-01)
+        stored_hashes: Dict[str, Optional[str]] = {}
+        all_method_ids = [m.method_id for m in methods]
+        if all_method_ids:
+            with conn.cursor() as cur:
+                cur.execute(_SQL_GET_STORED_HASHES_BATCH, (all_method_ids,))
+                for row in cur.fetchall():
+                    stored_hashes[row[0]] = row[1]
 
         # Identify which methods can be skipped (file unchanged)
         methods_to_embed: List[MethodInfo] = []
         for m in methods:
-            current_hash = _get_file_hash(m.file_path)
-            if current_hash:
-                with conn.cursor() as cur:
-                    cur.execute(_SQL_GET_STORED_HASH, (m.method_id,))
-                    row = cur.fetchone()
-                    stored_hash = row[0] if row else None
-                if stored_hash == current_hash:
-                    vectors_skipped += 1
-                    logger.debug("Skipping unchanged method '%s' (hash match).", m.method_id)
-                    continue
+            current_hash = _cached_file_hash(file_hash_cache, m.file_path)
+            stored_hash = stored_hashes.get(m.method_id)
+            if current_hash and stored_hash == current_hash:
+                vectors_skipped += 1
+                logger.debug("Skipping unchanged method '%s' (hash match).", m.method_id)
+                continue
             methods_to_embed.append(m)
 
         if not methods_to_embed:
@@ -273,7 +285,7 @@ def vectorize_and_store(classes: List[ClassInfo]) -> int:
             for idx, method_info in enumerate(methods_to_embed):
                 try:
                     embedding_vec: np.ndarray = raw_embeddings[idx].astype(np.float32)
-                    current_hash = _get_file_hash(method_info.file_path)
+                    current_hash = _cached_file_hash(file_hash_cache, method_info.file_path)
                     cur.execute(
                         _SQL_UPSERT_EMBEDDING,
                         (

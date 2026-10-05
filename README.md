@@ -1,8 +1,6 @@
-# QE-RAG System — Developer Guide
+# AutoQE Engine — Developer Guide
 
-Multi-Agent Quality Engineering RAG system that automatically generates JUnit 5 tests
-for a target Java codebase using a hybrid Neo4j graph + pgvector semantic search pipeline,
-powered by a local Ollama LLM, with an animated claymorphic web studio (**AutoQE Studio**).
+Multi-Agent Quality Engineering RAG system that automatically generates JUnit 5 tests for a target Java codebase using a hybrid Neo4j graph + pgvector semantic search pipeline, powered by a local Ollama LLM, with an animated web studio (**AutoQE Studio**).
 
 ---
 
@@ -12,7 +10,7 @@ Use the included cross-platform CLI scripts for single-command management:
 
 ```powershell
 # Windows PowerShell
-.\scripts\dev.ps1 up          # Start all containers (pgvector, neo4j, parser, ollama, prometheus, grafana)
+.\scripts\dev.ps1 up          # Start all containers (pgvector, neo4j, parser, prometheus, grafana)
 .\scripts\dev.ps1 health      # Verify health probes across all services
 .\scripts\dev.ps1 test        # Run backend, sandbox, and frontend verification test suites
 ```
@@ -24,7 +22,7 @@ Use the included cross-platform CLI scripts for single-command management:
 ./scripts/dev.sh test
 ```
 
-> For production deployment instructions, SSL termination, and security hardening, see [DEPLOYMENT.md](file:///d:/Projects/qe-rag-system/DEPLOYMENT.md).
+> For production deployment instructions, SSL termination, and security hardening, see [DEPLOYMENT.md](Documents/DEPLOYMENT.md).
 
 ---
 
@@ -61,7 +59,7 @@ Use the included cross-platform CLI scripts for single-command management:
 | Python | 3.11+ | for the parser-service |
 | Node.js & npm | 18+ / 20+ | for the AutoQE Studio frontend |
 | Docker + Docker Compose | latest | for Neo4j, pgvector, Prometheus, Grafana |
-| Ollama | latest | https://ollama.com — runs the local LLM (`llama3:8b`) |
+| Ollama | latest | [ollama.com](https://ollama.com) — runs the local LLM (`llama3:8b`) |
 
 ---
 
@@ -71,14 +69,14 @@ Use the included cross-platform CLI scripts for single-command management:
 docker compose up -d
 ```
 
-Starts the local container infrastructure:
+Starts the container infrastructure:
 - **`qe_pgvector`** — PostgreSQL + pgvector on port `5432`
 - **`qe_neo4j`** — Neo4j on ports `7474` (browser) and `7687` (bolt)
 - **`qe_parser_service`** — Python FastAPI parser on port `8000`
 - **`qe_prometheus`** — Prometheus TSDB on port `9090`
 - **`qe_grafana`** — Grafana Dashboard on port `3001`
 
-Ensure the local LLM is pulled and running in Ollama:
+Ensure the local LLM is running in Ollama:
 ```bash
 ollama run llama3
 ```
@@ -132,27 +130,6 @@ curl -X POST http://localhost:8000/ingest \
   -d "{\"repo_path\": \"D:/Projects/qe-rag-system/test-sandbox\"}"
 ```
 
-Expected response:
-```json
-{
-  "status": "SUCCESS",
-  "classes_parsed": 8,
-  "methods_parsed": 33,
-  "graph_nodes_created": 41,
-  "vectors_inserted": 33,
-  "vectors_skipped": 0,
-  "elapsed_seconds": 2.4,
-  "classes": [
-    {
-      "name": "UserService",
-      "full_name": "com.qe.demo.UserService",
-      "file_path": "...",
-      "methods": [...]
-    }
-  ]
-}
-```
-
 ---
 
 ## Step 5 — Generate Tests with Self-Healing
@@ -166,18 +143,6 @@ curl -X POST http://localhost:8080/api/v1/generate-tests \
     \"targetClassName\": \"UserService\",
     \"targetFilePath\": \"D:/Projects/qe-rag-system/test-sandbox/src/main/java/com/qe/demo/UserService.java\"
   }"
-```
-
-Expected response:
-```json
-{
-  "targetClass": "UserService",
-  "status": "PASSED",
-  "attempts": 1,
-  "compilationSuccessful": true,
-  "generatedTestCode": "package com.qe.demo; ...",
-  "executionLogs": "Tests run: 4, Failures: 0, Errors: 0"
-}
 ```
 
 **Status values:**
@@ -228,42 +193,21 @@ cd test-sandbox
 ## Project Structure
 
 ```
-qe-rag-system/
-├── docker-compose.yml          # Starts pgvector + neo4j + parser-service
-├── README.md                   # This file
-├── CHANGES.md                  # Comprehensive changelog reference
-├── PROJECT_SPECIFICATION.md    # Architectural design document
-├── start-ollama.bat            # Windows helper to start Ollama
+autoqe-engine/
+├── docker-compose.yml          # Container stack (pgvector, neo4j, parser-service, prometheus, grafana)
+├── README.md                   # Primary project overview and quick start
+├── Documents/                  # Architecture specs, design tokens, changelog & guides
+│   ├── CHANGES.md              # Detailed changelog reference
+│   ├── DEPLOYMENT.md           # Production deployment & SSL guide
+│   ├── DESIGN.md               # Frontend design tokens & component style system
+│   ├── PRODUCT.md              # Product requirements & capabilities
+│   └── PROJECT_SPECIFICATION.md# Architectural design document
+├── scripts/                    # Automation scripts
+│   ├── dev.ps1                 # Windows PowerShell dev CLI
+│   ├── dev.sh                  # Unix/macOS Bash dev CLI
+│   └── start-ollama.bat        # Windows helper to start Ollama
 ├── frontend/                   # AutoQE Studio (React 19 + TanStack + Tailwind CSS)
-│   ├── package.json
-│   ├── vite.config.ts
-│   ├── .env                    # VITE_PYTHON_API_URL & VITE_SPRING_API_URL
-│   └── src/
-│       ├── services/api.ts     # Unified API client (ingestion, generation, health)
-│       ├── routes/index.tsx    # Main studio workbench page
-│       └── components/autoqe/  # Bento, TopNav, Workbench, BubbleMap, AgentSquad
-├── parser-service/             # Python FastAPI — AST parsing + ingestion
-│   ├── Dockerfile
-│   ├── main.py                 # POST /ingest + GET /health + GET /status
-│   ├── requirements.txt
-│   ├── .env.example            # Environment variable template
-│   └── parser/
-│       ├── tree_sitter_parser.py
-│       ├── graph_builder.py
-│       └── vectorizer.py
-├── backend/                    # Java Spring Boot — AI orchestrator
-│   ├── pom.xml
-│   └── src/main/java/com/qe/agent/
-│       ├── agents/             # PlannerAgent, RetrievalAgent, GeneratorAgent
-│       ├── config/             # OllamaConfig, McpToolConfig, CorsConfig, AsyncConfig
-│       ├── controller/         # TestGenerationController (/health, /file-content, /generate-tests)
-│       ├── model/              # Request / Response records & DTOs
-│       ├── runner/             # TestRunnerService (self-healing engine), AsyncTestGenerationService
-│       └── tools/              # GraphQueryTool, VectorQueryTool
+├── backend/                    # Java Spring Boot 3.x — AI Agent Orchestrator
+├── parser-service/             # Python FastAPI — AST parsing, Tree-sitter, Neo4j & pgvector ingestion
 └── test-sandbox/               # Target Java project for AI test generation
-    └── src/
-        ├── main/java/com/qe/demo/   # 8 source classes (UserService, BankAccount, MathUtils, etc.)
-        └── test/java/com/qe/demo/   # JUnit 5 test files
 ```
-#   a u t o q e - e n g i n e  
- 

@@ -55,6 +55,9 @@ public class TestGenerationResponse {
     /** Combined stdout/stderr from the last Maven execution. */
     private String executionLogs;
 
+    /** Real code coverage percentage (0-100) extracted from JaCoCo, or null if not available. */
+    private Integer coverage;
+
     public void setStatus(TestStatus testStatus) {
         this.status = testStatus != null ? testStatus.getValue() : null;
     }

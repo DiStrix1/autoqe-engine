@@ -28,9 +28,29 @@ public record TestGenerationRequest(
 
         String directives,
 
-        String strategy
+        String strategy,
+
+        Boolean dryRun,
+
+        String assertionLibrary
 ) {
+    public TestGenerationRequest {
+        if (strategy == null || strategy.isBlank()) {
+            strategy = "Standard JUnit 5";
+        }
+        if (dryRun == null) {
+            dryRun = false;
+        }
+        if (assertionLibrary == null || assertionLibrary.isBlank()) {
+            assertionLibrary = "JUNIT5";
+        }
+    }
+
     public TestGenerationRequest(String targetClassName, String targetFilePath) {
-        this(targetClassName, targetFilePath, null, "Standard JUnit 5");
+        this(targetClassName, targetFilePath, null, "Standard JUnit 5", false, "JUNIT5");
+    }
+
+    public TestGenerationRequest(String targetClassName, String targetFilePath, String strategy, String directives) {
+        this(targetClassName, targetFilePath, directives, strategy, false, "JUNIT5");
     }
 }

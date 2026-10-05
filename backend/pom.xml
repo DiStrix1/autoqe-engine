@@ -61,6 +61,20 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Micrometer Prometheus registry: exports metrics to /actuator/prometheus
+             for scraping by Prometheus (#13 Grafana observability dashboard). -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- Spring Boot WebSocket: enables STOMP over WebSocket for real-time
+             bidirectional streaming with mid-flight cancellation (#14). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
         <!-- Spring Boot Validation: @Valid, @NotBlank, @Pattern on request models
              (Improvement #E - path traversal input validation) -->
         <dependency>
@@ -156,6 +170,41 @@
             <groupId>org.mockito</groupId>
             <artifactId>mockito-junit-jupiter</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <!-- Spring Security: API-key authentication filter (SecurityConfig).
+             Activation is gated by qe.security.enabled=true — disabled by default
+             so local development is not affected. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!-- Bucket4j: token-bucket rate limiting for generation endpoints (RateLimitInterceptor).
+             Uses the core library only — no Redis/Hazelcast backend needed for single-node use. -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-core</artifactId>
+            <version>8.10.1</version>
+        </dependency>
+
+        <!-- Logstash Logback Encoder: structured JSON logging in production (#B-14) -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>7.4</version>
+        </dependency>
+
+        <!-- Micrometer Tracing Bridge for OpenTelemetry (#B-15) -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+
+        <!-- OpenTelemetry OTLP Exporter: exports spans to OTLP collector/Tempo/Jaeger -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
         </dependency>
 
     </dependencies>

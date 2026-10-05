@@ -102,11 +102,17 @@ public class OllamaConfig {
      */
     @Bean
     public EmbeddingModel embeddingModel() {
-        log.info("Loading AllMiniLmL6V2QuantizedEmbeddingModel (ONNX in-process, expected-dim={}).",
-                expectedEmbeddingDimensions);
-        // Improvement #N: dimension is now configurable via qe.embedding.expected-dimensions.
-        // If you change the model, update that property AND the Python EMBEDDING_DIM env var together.
-        return new AllMiniLmL6V2QuantizedEmbeddingModel();
+        AllMiniLmL6V2QuantizedEmbeddingModel model = new AllMiniLmL6V2QuantizedEmbeddingModel();
+        int actualDim = model.dimension();
+        if (actualDim != expectedEmbeddingDimensions) {
+            throw new IllegalStateException(String.format(
+                    "Embedding model dimension mismatch: model produces %d-dim vectors, "
+                    + "but qe.embedding.expected-dimensions=%d. "
+                    + "Update both this property and the Python service EMBEDDING_DIM env var.",
+                    actualDim, expectedEmbeddingDimensions));
+        }
+        log.info("AllMiniLmL6V2QuantizedEmbeddingModel loaded (ONNX in-process, dim={} ✓).", actualDim);
+        return model;
     }
 
     // -------------------------------------------------------------------------

@@ -11,6 +11,7 @@ See PROJECT_SPECIFICATION.md Section 4.1 for the endpoint contract.
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import sys
@@ -18,8 +19,10 @@ import time
 from typing import Dict, List, Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException, Security, Depends, status
+from fastapi.security.api_key import APIKeyHeader
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 # ---------------------------------------------------------------------------
 # Logging — configure before importing sub-modules so their loggers inherit
@@ -75,11 +78,16 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# Pydantic models
+# Pydantic models (Standardized camelCase serialization)
 # ---------------------------------------------------------------------------
 
 
-class IngestRequest(BaseModel):
+class CamelModel(BaseModel):
+    """Base model emitting clean camelCase over HTTP while accepting snake_case."""
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class IngestRequest(CamelModel):
     """Payload for POST /ingest."""
 
     repo_path: str = Field(
@@ -89,21 +97,21 @@ class IngestRequest(BaseModel):
     )
 
 
-class ParsedMethod(BaseModel):
+class ParsedMethod(CamelModel):
     name: str
     return_type: str
     signature: str
     method_id: str
 
 
-class ParsedClass(BaseModel):
+class ParsedClass(CamelModel):
     name: str
     full_name: str
     file_path: str
     methods: List[ParsedMethod] = []
 
 
-class IngestResponse(BaseModel):
+class IngestResponse(CamelModel):
     """Success response from POST /ingest."""
 
     status: str
@@ -116,7 +124,7 @@ class IngestResponse(BaseModel):
     classes: Optional[List[ParsedClass]] = None
 
 
-class StatusResponse(BaseModel):
+class StatusResponse(CamelModel):
     """Response from GET /status — DB row-count snapshot."""
 
     status: str
@@ -124,6 +132,50 @@ class StatusResponse(BaseModel):
     neo4j_class_count: Optional[int]
     neo4j_method_count: Optional[int]
     errors: List[str]
+
+
+
+# ---------------------------------------------------------------------------
+# Security — API Key Authentication
+# ---------------------------------------------------------------------------
+API_KEY_HEADER_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_HEADER_NAME, auto_error=False)
+
+
+def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> Optional[str]:
+    """
+    Verifies incoming requests against configured API keys.
+    If security is enabled (QE_SECURITY_ENABLED or PARSER_SECURITY_ENABLED is 'true'
+    or valid keys are configured in QE_SECURITY_API_KEYS / PARSER_API_KEY),
+    requires a valid X-API-Key header.
+    """
+    sec_enabled = (
+        os.environ.get("QE_SECURITY_ENABLED", "").lower() in ("true", "1", "yes")
+        or os.environ.get("PARSER_SECURITY_ENABLED", "").lower() in ("true", "1", "yes")
+    )
+    raw_keys = os.environ.get("QE_SECURITY_API_KEYS") or os.environ.get("PARSER_API_KEY") or ""
+    valid_keys = [k.strip() for k in raw_keys.split(",") if k.strip()]
+
+    # If security is explicitly disabled and no keys configured, permit request
+    if not sec_enabled and not valid_keys:
+        return api_key
+
+    if not api_key:
+        logger.warning("[Security] Rejected unauthenticated request — missing %s", API_KEY_HEADER_NAME)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid API key",
+        )
+
+    for key in valid_keys:
+        if hmac.compare_digest(api_key.encode("utf-8"), key.encode("utf-8")):
+            return api_key
+
+    logger.warning("[Security] Rejected unauthorized request — invalid %s", API_KEY_HEADER_NAME)
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Missing or invalid API key",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +199,7 @@ def health_check() -> Dict[str, str]:
         "Returns partial results if one database is unreachable."
     ),
 )
-def get_db_status() -> StatusResponse:
+def get_db_status(_auth: Optional[str] = Depends(verify_api_key)) -> StatusResponse:
     """
     Returns a live snapshot of stored data across both databases.
     Partial results are returned if one DB is unavailable.
@@ -208,7 +260,7 @@ def get_db_status() -> StatusResponse:
         "generate embeddings → store. Returns execution metrics."
     ),
 )
-def ingest(request: IngestRequest) -> IngestResponse:
+def ingest(request: IngestRequest, _auth: Optional[str] = Depends(verify_api_key)) -> IngestResponse:
     """
     Full ingestion pipeline for a target Java codebase.
 
@@ -223,13 +275,49 @@ def ingest(request: IngestRequest) -> IngestResponse:
     repo_path: str = request.repo_path
     logger.info("POST /ingest — repo_path: '%s'", repo_path)
 
-    # --- Step 1: Validate path ---
-    import os as _os
-    if not _os.path.isdir(repo_path):
+    # Read WORKSPACE_ROOT once — used for both path translation and sandbox enforcement.
+    workspace_root: str = os.environ.get("WORKSPACE_ROOT", "/workspace")
+
+    # --- Step 1: Validate path & prevent traversal ---
+    if ".." in repo_path or "\0" in repo_path:
+        logger.error("[Security] Path traversal attempt in repo_path: '%s'", repo_path)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Path traversal attempt rejected",
+        )
+
+    # Seamless translation for Windows host paths passed from client
+    if ("test-sandbox" in repo_path or ":\\" in repo_path or ":/" in repo_path) and not os.path.isdir(repo_path):
+        normalized = repo_path.replace("\\", "/")
+        if "test-sandbox" in normalized:
+            candidate = os.path.join(workspace_root, "test-sandbox")
+            if os.path.isdir(candidate):
+                logger.info("Translating host path '%s' to container workspace '%s'", repo_path, candidate)
+                repo_path = candidate
+
+    real_path = os.path.realpath(repo_path)
+    if not os.path.isdir(real_path):
         logger.error("repo_path does not exist or is not a directory: '%s'", repo_path)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"repo_path is not a valid directory: {repo_path}",
+        )
+
+    # Disallow root filesystem parsing
+    if real_path in ("/", "\\", "C:\\", "C:/"):
+        logger.error("[Security] Ingestion of root filesystem rejected: '%s'", real_path)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Ingestion of root filesystem is strictly prohibited",
+        )
+
+    # Enforce sandbox containment using the single workspace_root variable
+    real_workspace = os.path.realpath(workspace_root)
+    if not real_path.startswith(real_workspace):
+        logger.error("[Security] repo_path '%s' is outside WORKSPACE_ROOT '%s'", real_path, real_workspace)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"repo_path must be within WORKSPACE_ROOT ({workspace_root})",
         )
 
     t_start: float = time.perf_counter()

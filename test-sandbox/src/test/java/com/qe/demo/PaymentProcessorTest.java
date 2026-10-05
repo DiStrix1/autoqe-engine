@@ -9,9 +9,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 public class PaymentProcessorTest {
 
-    @ExtendWith(MockitoExtension.class)
     @InjectMocks
     private PaymentProcessor paymentProcessor;
 

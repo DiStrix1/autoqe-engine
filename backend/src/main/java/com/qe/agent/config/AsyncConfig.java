@@ -1,46 +1,63 @@
 package com.qe.agent.config;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * AsyncConfig — enables Spring @Async and configures the dedicated thread pool
  * for long-running test generation jobs.
  *
- * <p>Improvement #J: decouples the HTTP request thread from the test generation
- * pipeline (which can run for 3-10+ minutes with Ollama retries), preventing
- * HTTP client timeouts on the async endpoint.
- *
- * <p>Pool sizing rationale:
+ * <p>Pool sizing is externally configurable via properties:
  * <ul>
- *   <li>Core size 2: allows two concurrent generations without overloading Ollama.</li>
- *   <li>Max size 4: handles burst without starvation.</li>
- *   <li>Queue 10: absorbs short bursts while the pool is fully loaded.</li>
+ *   <li>{@code qe.async.core-pool-size}: baseline threads (default: 2)</li>
+ *   <li>{@code qe.async.max-pool-size}: maximum burst threads (default: 4)</li>
+ *   <li>{@code qe.async.queue-capacity}: buffer queue size (default: 10)</li>
  * </ul>
- * Adjust via {@code qe.async.core-pool-size}, {@code qe.async.max-pool-size},
- * and {@code qe.async.queue-capacity} in application.properties (future work).
+ * Under extreme load, uses {@link ThreadPoolExecutor.CallerRunsPolicy} as backpressure
+ * rather than discarding jobs.
  */
 @Slf4j
 @EnableAsync
 @Configuration
 public class AsyncConfig {
 
+    @Value("${qe.async.core-pool-size:2}")
+    private int corePoolSize;
+
+    @Value("${qe.async.max-pool-size:4}")
+    private int maxPoolSize;
+
+    @Value("${qe.async.queue-capacity:10}")
+    private int queueCapacity;
+
     @Bean(name = "qeTaskExecutor")
     public Executor qeTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(4);
-        executor.setQueueCapacity(10);
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(queueCapacity);
         executor.setThreadNamePrefix("qe-async-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(60);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.initialize();
-        log.info("QE async thread pool configured: core=2, max=4, queue=10");
+        log.info("QE async thread pool configured: core={}, max={}, queue={}",
+                corePoolSize, maxPoolSize, queueCapacity);
         return executor;
     }
+
+    @Bean
+    public PathValidator pathValidator(
+            WorkspacePathTranslator pathTranslator,
+            @Value("${qe.sandbox.allowed-root:}") String allowedRoot) {
+        return new PathValidator(pathTranslator, allowedRoot);
+    }
 }
+

@@ -15,6 +15,9 @@ public enum TestStatus {
     GENERATION_FAILED("GENERATION_FAILED"),
     FILE_NOT_FOUND("FILE_NOT_FOUND"),
     INVALID_PATH("INVALID_PATH"),
+    TIMEOUT("TIMEOUT"),
+    CANCELLED("CANCELLED"),
+    DRY_RUN("DRY_RUN"),
     ERROR("ERROR");
 
     private final String value;

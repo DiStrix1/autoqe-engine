@@ -1,92 +1,117 @@
 # =============================================================
-# QE-RAG-System — .gitignore
-# Covers: Python, Java/Maven, Docker, IDE, and OS artefacts
-# Rule: NO credentials, secrets, or compiled artefacts committed
+# AutoQE / QE-RAG System — .gitignore
+# Production-ready Git Ignore Configuration
 # =============================================================
 
-# ── Python ────────────────────────────────────────────────────
+# ── Environment & Secrets ─────────────────────────────────────
+# Never commit credentials, tokens, or environment files
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# ── Python / Parser Service ───────────────────────────────────
 __pycache__/
+**/*__pycache__*
 *.py[cod]
+*$py.class
 *.pyo
 *.pyd
 *.so
-*.egg
-*.egg-info/
-dist/
-build/
-.eggs/
-pip-wheel-metadata/
-
-# Virtual environments
-.venv/
-venv/
+.Python
 env/
+venv/
+.venv/
 ENV/
-
-# Jupyter / IPython
-.ipynb_checkpoints/
-*.ipynb
-
-# Sentence-transformers / HuggingFace model cache
-.cache/
-models/
-
-# pytest / coverage
-.pytest_cache/
+env.bak/
+venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.nox/
 .coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
 htmlcov/
-*.coveragerc
-
-# mypy / ruff
+*.egg-info/
+.installed.cfg
+*.egg
 .mypy_cache/
 .ruff_cache/
 
+# Model & Tokenizer Caching
+models/
+.transformers_cache/
+huggingface/
+
 # ── Node.js / Frontend ────────────────────────────────────────
 node_modules/
-frontend/node_modules/
-frontend/.output/
-frontend/dist/
-frontend/.nitro/
-frontend/.tanstack/
-.npm
-*.tsbuildinfo
+**/node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+dist/
+dist-ssr/
+build/
+*.local
+.output/
+.nitro/
+.tanstack/
+.vite/
+.cache/
+.npm
+*.tsbuildinfo
 
 # ── Java / Maven ──────────────────────────────────────────────
-backend/target/
-test-sandbox/target/
+target/
+**/target/
 *.class
 *.jar
 *.war
 *.ear
 *.nar
 hs_err_pid*
+replay_pid*
+.mvn/timing.properties
+.flattened-pom.xml
 
-# Maven wrapper cache
-.mvn/wrapper/maven-wrapper.jar
+# Generated test files from AI test runs (ephemeral sandbox output)
+test-sandbox/src/test/java/**/Generated*.java
+test-sandbox/target/
+backend/target/
 
-# ── Docker / Secrets ──────────────────────────────────────────
-# Never commit .env files that contain real credentials
-.env
-.env.*
-!.env.example
-
-# Docker volumes managed externally — not tracked
+# ── Docker & Volume Storage ───────────────────────────────────
 docker-volumes/
+monitoring/grafana/data/
+monitoring/prometheus/data/
 
-# ── IDEs ──────────────────────────────────────────────────────
-# IntelliJ IDEA
+# ── IDEs & Developer Tools ────────────────────────────────────
+# Visual Studio Code
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains (IntelliJ IDEA, PyCharm, WebStorm, etc.)
 .idea/
 *.iml
 *.iws
 *.ipr
 out/
-
-# VS Code
-.vscode/
-*.code-workspace
 
 # Eclipse
 .classpath
@@ -95,19 +120,30 @@ out/
 bin/
 
 # NetBeans
-nbproject/
-nbbuild/
+nbproject/private/
+build/
 nbdist/
+.nb-attrs
 
-# ── OS artefacts ──────────────────────────────────────────────
+# AI Assistants & Local Tooling
+.claude/
+.impeccable/
+.gemini/
+
+# ── Operating System Artifacts ─────────────────────────────────
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 desktop.ini
 
-# ── Logs ──────────────────────────────────────────────────────
-*.log
-logs/
-
-# ── Tree-sitter build artefacts ───────────────────────────────
-# Legacy build-library outputs — spec forbids these anyway
-build/
+# ── Temporary & Scratch Files ─────────────────────────────────
+scratch/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~

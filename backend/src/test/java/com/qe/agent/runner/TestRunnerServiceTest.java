@@ -11,107 +11,99 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for the pure-logic helper methods in {@link TestRunnerService}.
+ * Unit tests for {@link TestRunnerService} and {@link JavaSourceSanitizer}.
  *
- * <p>The private methods are tested via reflection because they contain
- * critical string-processing logic that is too important to leave uncovered:
- * a bug in {@code extractCodeBlock} silently passes garbage code to Maven.
- *
- * <p>No Spring context is needed — these are pure string/file logic tests.
+ * <p>Pure string and file logic tests with no Spring context required.
  */
 class TestRunnerServiceTest {
 
-    // We need a GeneratorAgent to construct TestRunnerService; use a Mockito mock.
-    private final com.qe.agent.agents.GeneratorAgent mockAgent =
-            mock(com.qe.agent.agents.GeneratorAgent.class);
-
-    private final TestRunnerService service = new TestRunnerService(mockAgent);
+    private final TestRunnerService service = new TestRunnerService(120);
 
     // =========================================================================
-    // extractCodeBlock (via reflection)
+    // extractCodeBlock (JavaSourceSanitizer)
     // =========================================================================
 
     @Test
-    void extractCodeBlock_withJavaFence_returnsInnerCode() throws Exception {
+    void extractCodeBlock_withJavaFence_returnsInnerCode() {
         String input = "```java\npublic class Foo {}\n```";
-        String result = invokeExtractCodeBlock(input);
+        String result = JavaSourceSanitizer.extractCodeBlock(input);
         assertEquals("public class Foo {}", result);
     }
 
     @Test
-    void extractCodeBlock_withPlainFence_returnsInnerCode() throws Exception {
+    void extractCodeBlock_withPlainFence_returnsInnerCode() {
         String input = "```\npublic class Foo {}\n```";
-        String result = invokeExtractCodeBlock(input);
+        String result = JavaSourceSanitizer.extractCodeBlock(input);
         assertEquals("public class Foo {}", result);
     }
 
     @Test
-    void extractCodeBlock_noFence_returnsTrimmedInput() throws Exception {
+    void extractCodeBlock_noFence_returnsTrimmedInput() {
         String input = "  public class Foo {}  ";
-        String result = invokeExtractCodeBlock(input);
+        String result = JavaSourceSanitizer.extractCodeBlock(input);
         assertEquals("public class Foo {}", result);
     }
 
     @Test
-    void extractCodeBlock_nullInput_returnsEmptyString() throws Exception {
-        String result = invokeExtractCodeBlock(null);
+    void extractCodeBlock_nullInput_returnsEmptyString() {
+        String result = JavaSourceSanitizer.extractCodeBlock(null);
         assertEquals("", result);
     }
 
     @Test
-    void extractCodeBlock_blankInput_returnsEmptyString() throws Exception {
-        String result = invokeExtractCodeBlock("   ");
+    void extractCodeBlock_blankInput_returnsEmptyString() {
+        String result = JavaSourceSanitizer.extractCodeBlock("   ");
         assertEquals("", result);
     }
 
     @Test
-    void extractCodeBlock_fenceWithExtraResidualLine_stripsResidual() throws Exception {
+    void extractCodeBlock_fenceWithExtraResidualLine_stripsResidual() {
         // Simulate llama3 output quirk: ```java appears as first line inside captured group
         String input = "```java\n```java\npublic class Foo {}\n```";
-        String result = invokeExtractCodeBlock(input);
+        String result = JavaSourceSanitizer.extractCodeBlock(input);
         // Should not start with ```
         assertFalse(result.startsWith("```"), "Residual fence line should be stripped");
         assertTrue(result.contains("public class Foo {}"));
     }
 
     // =========================================================================
-    // extractPackageName (via reflection)
+    // extractPackageName (JavaSourceSanitizer)
     // =========================================================================
 
     @Test
-    void extractPackageName_validPackageStatement_returnsPackageName() throws Exception {
+    void extractPackageName_validPackageStatement_returnsPackageName() {
         String code = "package com.qe.demo;\n\npublic class Foo {}";
-        String pkg = invokeExtractPackageName(code);
+        String pkg = JavaSourceSanitizer.extractPackageName(code);
         assertEquals("com.qe.demo", pkg);
     }
 
     @Test
-    void extractPackageName_noPackageStatement_returnsEmptyString() throws Exception {
+    void extractPackageName_noPackageStatement_returnsEmptyString() {
         String code = "public class Foo {}";
-        String pkg = invokeExtractPackageName(code);
+        String pkg = JavaSourceSanitizer.extractPackageName(code);
         assertEquals("", pkg);
     }
 
     // =========================================================================
-    // extractPublicClassName (via reflection)
+    // extractPublicClassName (JavaSourceSanitizer)
     // =========================================================================
 
     @Test
-    void extractPublicClassName_validPublicClass_returnsClassName() throws Exception {
+    void extractPublicClassName_validPublicClass_returnsClassName() {
         String code = "package com.qe.demo;\npublic class UserServiceTest {}";
-        String name = invokeExtractPublicClassName(code);
+        String name = JavaSourceSanitizer.extractPublicClassName(code);
         assertEquals("UserServiceTest", name);
     }
 
     @Test
-    void extractPublicClassName_noPublicClass_returnsDefaultFallback() throws Exception {
+    void extractPublicClassName_noPublicClass_returnsDefaultFallback() {
         String code = "class Hidden {}";
-        String name = invokeExtractPublicClassName(code);
+        String name = JavaSourceSanitizer.extractPublicClassName(code);
         assertEquals("GeneratedTest", name);
     }
 
     // =========================================================================
-    // findMavenRoot (via reflection)
+    // findMavenRoot
     // =========================================================================
 
     @Test
@@ -140,13 +132,13 @@ class TestRunnerServiceTest {
     }
 
     // =========================================================================
-    // ensureStaticImports (via reflection)
+    // ensureStaticImports (JavaSourceSanitizer)
     // =========================================================================
 
     @Test
-    void ensureStaticImports_missingBoth_injectsAssertionsAndMockito() throws Exception {
+    void ensureStaticImports_missingBoth_injectsAssertionsAndMockito() {
         String code = "package com.qe.demo;\n\nimport org.mockito.Mock;\n\npublic class FooTest {}";
-        String result = invokeEnsureStaticImports(code);
+        String result = JavaSourceSanitizer.ensureStaticImports(code);
 
         assertTrue(result.contains("import static org.junit.jupiter.api.Assertions.*;"),
                 "Should inject Assertions import");
@@ -155,19 +147,20 @@ class TestRunnerServiceTest {
     }
 
     @Test
-    void ensureStaticImports_bothPresent_returnsCodeUnchanged() throws Exception {
+    void ensureStaticImports_bothPresent_returnsCodeUnchanged() {
         String code = "package com.qe.demo;\n\n"
+                + "import java.util.*;\n\n"
                 + "import static org.junit.jupiter.api.Assertions.*;\n"
                 + "import static org.mockito.Mockito.*;\n\n"
                 + "public class FooTest {}";
-        String result = invokeEnsureStaticImports(code);
+        String result = JavaSourceSanitizer.ensureStaticImports(code);
         assertEquals(code, result);
     }
 
     @Test
-    void ensureStaticImports_noMockitoUsage_doesNotInjectMockitoImport() throws Exception {
+    void ensureStaticImports_noMockitoUsage_doesNotInjectMockitoImport() {
         String code = "package com.qe.demo;\n\npublic class FooTest {}";
-        String result = invokeEnsureStaticImports(code);
+        String result = JavaSourceSanitizer.ensureStaticImports(code);
 
         assertFalse(result.contains("import static org.mockito.Mockito.*;"),
                 "Should NOT inject Mockito import when no Mockito usage detected");
@@ -183,26 +176,80 @@ class TestRunnerServiceTest {
     }
 
     // =========================================================================
-    // Reflection helpers
+    // extractJaCoCoCoverage
     // =========================================================================
 
-    private String invokeExtractCodeBlock(String input) throws Exception {
-        Method m = TestRunnerService.class.getDeclaredMethod("extractCodeBlock", String.class);
-        m.setAccessible(true);
-        return (String) m.invoke(service, input);
+    @Test
+    void extractJaCoCoCoverage_missingCsv_returnsNull(@TempDir Path tempDir) {
+        Integer coverage = service.extractJaCoCoCoverage(tempDir, "UserService");
+        assertNull(coverage, "Missing CSV should return null");
     }
 
-    private String invokeExtractPackageName(String input) throws Exception {
-        Method m = TestRunnerService.class.getDeclaredMethod("extractPackageName", String.class);
-        m.setAccessible(true);
-        return (String) m.invoke(service, input);
+    @Test
+    void extractJaCoCoCoverage_validCsv_computesAccuratePercentage(@TempDir Path tempDir) throws Exception {
+        Path jacocoDir = tempDir.resolve("target").resolve("site").resolve("jacoco");
+        Files.createDirectories(jacocoDir);
+        Path csvFile = jacocoDir.resolve("jacoco.csv");
+
+        // UserService has 30 covered lines and 10 missed lines => 30 / (30 + 10) = 75%
+        String csvContent = """
+                GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+                TestGroup,com.qe.demo,UserService,0,100,0,10,10,30,0,5,0,3
+                TestGroup,com.qe.demo,OrderService,5,50,2,8,2,18,1,4,0,2
+                """;
+        Files.writeString(csvFile, csvContent);
+
+        Integer coverage = service.extractJaCoCoCoverage(tempDir, "UserService");
+        assertNotNull(coverage);
+        assertEquals(75, coverage.intValue());
     }
 
-    private String invokeExtractPublicClassName(String input) throws Exception {
-        Method m = TestRunnerService.class.getDeclaredMethod("extractPublicClassName", String.class);
-        m.setAccessible(true);
-        return (String) m.invoke(service, input);
+    @Test
+    void extractJaCoCoCoverage_withInnerClasses_aggregatesLines(@TempDir Path tempDir) throws Exception {
+        Path jacocoDir = tempDir.resolve("target").resolve("site").resolve("jacoco");
+        Files.createDirectories(jacocoDir);
+        Path csvFile = jacocoDir.resolve("jacoco.csv");
+
+        // SessionManager: 6 missed, 20 covered
+        // SessionManager.SessionInfo: 0 missed, 4 covered
+        // Total covered = 20 + 4 = 24. Total missed = 6 + 0 = 6. Total = 30. (24 * 100) / 30 = 80%.
+        String csvContent = """
+                GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+                TestGroup,com.qe.demo,SessionManager,10,80,2,6,6,20,2,4,0,3
+                TestGroup,com.qe.demo,SessionManager.SessionInfo,0,20,0,0,0,4,0,1,0,1
+                """;
+        Files.writeString(csvFile, csvContent);
+
+        Integer coverage = service.extractJaCoCoCoverage(tempDir, "SessionManager");
+        assertNotNull(coverage);
+        assertEquals(80, coverage.intValue());
     }
+
+    // =========================================================================
+    // validateSafety (JavaSourceSanitizer)
+    // =========================================================================
+
+    @Test
+    void validateSafety_safeCode_passesWithoutException() {
+        String safeCode = "package com.qe.demo;\n\npublic class SafeTest {\n    @Test\n    void test() {\n        assertEquals(2, 1 + 1);\n    }\n}";
+        assertDoesNotThrow(() -> JavaSourceSanitizer.validateSafety(safeCode));
+    }
+
+    @Test
+    void validateSafety_fileIo_throwsSecurityException() {
+        String dangerousCode = "package com.qe.demo;\n\npublic class LeakTest {\n    void leak() throws Exception {\n        java.nio.file.Files.readString(null);\n    }\n}";
+        assertThrows(SecurityException.class, () -> JavaSourceSanitizer.validateSafety(dangerousCode));
+    }
+
+    @Test
+    void validateSafety_processSpawning_throwsSecurityException() {
+        String dangerousCode = "package com.qe.demo;\n\npublic class ExploitTest {\n    void run() {\n        Runtime.getRuntime().exec(\"calc\");\n    }\n}";
+        assertThrows(SecurityException.class, () -> JavaSourceSanitizer.validateSafety(dangerousCode));
+    }
+
+    // =========================================================================
+    // Helpers
+    // =========================================================================
 
     private Path invokeFindMavenRoot(Path start) throws Exception {
         Method m = TestRunnerService.class.getDeclaredMethod("findMavenRoot", Path.class);
@@ -212,11 +259,5 @@ class TestRunnerServiceTest {
         } catch (java.lang.reflect.InvocationTargetException ite) {
             throw (Exception) ite.getCause();
         }
-    }
-
-    private String invokeEnsureStaticImports(String input) throws Exception {
-        Method m = TestRunnerService.class.getDeclaredMethod("ensureStaticImports", String.class);
-        m.setAccessible(true);
-        return (String) m.invoke(service, input);
     }
 }

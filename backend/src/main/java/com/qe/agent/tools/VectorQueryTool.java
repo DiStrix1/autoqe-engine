@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * VectorQueryTool - LangChain4j tool bean for semantic similarity queries
@@ -28,6 +29,8 @@ import java.util.List;
 @Slf4j
 @Component
 public class VectorQueryTool {
+
+    private static final Pattern VECTOR_LITERAL_PATTERN = Pattern.compile("^\\[[-?\\d.,eE\\s]+\\]$");
 
     private final JdbcTemplate jdbcTemplate;
     private final EmbeddingModel embeddingModel;
@@ -87,11 +90,14 @@ public class VectorQueryTool {
             }
 
             String vectorLiteral = toVectorLiteral(vector);
+            if (!VECTOR_LITERAL_PATTERN.matcher(vectorLiteral).matches()) {
+                throw new IllegalArgumentException("Generated vector literal contains invalid characters");
+            }
 
             // pgvector cosine distance: '<=>'.  We use string-interpolation for the vector
             // literal because the standard JDBC '?' placeholder does not support the
             // '?::vector' cast syntax reliably across all PostgreSQL JDBC driver versions.
-            // The vector is model-generated (not user-supplied), so SQL injection is not a risk.
+            // The vector is model-generated and verified to contain only digits/commas/brackets.
             String sql = String.format("""
                     SELECT method_id, class_name, method_name, file_path, method_body,
                            1 - (embedding <=> '%s'::vector) AS similarity

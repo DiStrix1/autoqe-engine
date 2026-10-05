@@ -63,13 +63,47 @@ public final class JavaSourceSanitizer {
     }
 
     /**
+     * Ensures the test code contains a valid package declaration.
+     * If the test code lacks a package declaration but the target source code has one,
+     * prepends the target class's package declaration.
+     */
+    public static String ensurePackage(String testCode, String targetFileContent) {
+        if (testCode == null || testCode.isBlank()) return testCode;
+        String existingPackage = extractPackageName(testCode);
+        if (!existingPackage.isEmpty()) {
+            return testCode;
+        }
+        String targetPackage = extractPackageName(targetFileContent);
+        if (!targetPackage.isEmpty()) {
+            return "package " + targetPackage + ";\n\n" + testCode.stripLeading();
+        }
+        return testCode;
+    }
+
+    private static final Pattern JAVA_IDENTIFIER_PATTERN =
+            Pattern.compile("^[a-zA-Z_$][a-zA-Z0-9_$]*$");
+
+    /**
+     * Validates whether a given string is a syntactically valid Java identifier.
+     */
+    public static boolean isValidJavaIdentifier(String name) {
+        return name != null && JAVA_IDENTIFIER_PATTERN.matcher(name).matches();
+    }
+
+    /**
      * Extracts the first {@code public class} name from a Java source string.
-     * Falls back to {@code "GeneratedTest"} if no match is found.
+     * Falls back to {@code "GeneratedTest"} if no match is found or if the extracted name is invalid.
      */
     public static String extractPublicClassName(String javaSource) {
         if (javaSource == null || javaSource.isBlank()) return "GeneratedTest";
         Matcher m = CLASS_NAME_PATTERN.matcher(javaSource);
-        return m.find() ? m.group(1) : "GeneratedTest";
+        if (m.find()) {
+            String candidate = m.group(1);
+            if (isValidJavaIdentifier(candidate)) {
+                return candidate;
+            }
+        }
+        return "GeneratedTest";
     }
 
     /**
@@ -92,16 +126,24 @@ public final class JavaSourceSanitizer {
                 || code.contains("org.mockito");
         boolean needsMockito = containsMockito && !code.contains("import static org.mockito.Mockito.*");
 
-        if (!needsAssertions && !needsMockito) {
-            return code;
-        }
-
         List<String> importsToAdd = new ArrayList<>();
         if (needsAssertions) {
             importsToAdd.add("import static org.junit.jupiter.api.Assertions.*;");
         }
         if (needsMockito) {
             importsToAdd.add("import static org.mockito.Mockito.*;");
+        }
+
+        // Always inject java.util.* wildcard as a safety net.
+        // This is a no-op if it is already present and harmless alongside specific imports.
+        // It guarantees that no java.util type (List, Map, Optional, Set, etc.) can ever
+        // produce a "cannot find symbol" compile error due to a missing import.
+        if (!code.contains("import java.util.*;")) {
+            importsToAdd.add("import java.util.*;");
+        }
+
+        if (importsToAdd.isEmpty()) {
+            return code;
         }
 
         String importBlock = String.join("\n", importsToAdd);
@@ -114,4 +156,26 @@ public final class JavaSourceSanitizer {
             return importBlock + "\n\n" + code;
         }
     }
+
+    private static final Pattern DANGEROUS_PATTERNS = Pattern.compile(
+            "\\b(Runtime\\.getRuntime\\s*\\(|ProcessBuilder|java\\.lang\\.Process\\b|System\\.exit\\s*\\(|System\\.load(Library)?\\s*\\(|System\\.setSecurityManager|java\\.lang\\.reflect\\.|java\\.lang\\.invoke\\.MethodHandles|sun\\.misc\\.Unsafe|sun\\.reflect\\.|jdk\\.internal\\.|ClassLoader|URLClassLoader|java\\.net\\.(Socket|ServerSocket|URL|URI|http)|javax\\.net\\.|javax\\.naming\\.(InitialContext|Context)|javax\\.script\\.(ScriptEngine|ScriptEngineManager)|java\\.lang\\.instrument\\.|java\\.io\\.(File|FileInputStream|FileOutputStream|RandomAccessFile|FileReader|FileWriter)|java\\.nio\\.file\\.(Files|Paths|Path|FileSystem|FileSystems))|ldap://|rmi://",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Inspects generated Java test code for dangerous APIs (process spawning,
+     * network socket connections, reflection abuse, JNDI lookups, or system termination).
+     *
+     * @param code generated Java source code
+     * @throws SecurityException if prohibited APIs or patterns are detected
+     */
+    public static void validateSafety(String code) {
+        if (code == null || code.isBlank()) {
+            return;
+        }
+        Matcher m = DANGEROUS_PATTERNS.matcher(code);
+        if (m.find()) {
+            throw new SecurityException("Generated test code failed security validation: prohibited API pattern detected: " + m.group());
+        }
+    }
 }
+

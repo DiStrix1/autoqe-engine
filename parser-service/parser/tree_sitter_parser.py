@@ -16,7 +16,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import tree_sitter_java as tsjava  # tree-sitter-java >= 0.21.0
 from tree_sitter import Language, Node, Parser  # tree-sitter >= 0.22.0
@@ -59,14 +59,17 @@ class ClassInfo:
     full_name: str          # package-qualified name, e.g. "com.example.UserService"
     file_path: str          # absolute path of the .java file
     methods: List[MethodInfo] = field(default_factory=list)
+    fields: Dict[str, str] = field(default_factory=dict)  # field_name -> base type_name
 
 
 @dataclass
 class CallInfo:
     """Represents a resolved method-call edge."""
 
-    caller_id: str          # method_id of the calling method
-    callee_name: str        # simple name used at the call-site (best-effort)
+    caller_id: str                       # method_id of the calling method
+    callee_name: str                     # simple name used at the call-site (best-effort)
+    receiver: Optional[str] = None       # variable expression at call-site (e.g. "userRepo" or "this")
+    receiver_type: Optional[str] = None  # resolved class type of receiver (e.g. "UserRepository")
 
 
 @dataclass
@@ -171,29 +174,61 @@ def _build_method_id(class_full_name: str, method_name: str, param_types: str) -
 def _collect_method_invocations(
     method_body_node: Node,
     source: bytes,
-) -> List[str]:
+    fields: Optional[Dict[str, str]] = None,
+    class_name: Optional[str] = None,
+) -> List[Tuple[str, Optional[str], Optional[str]]]:
     """
     Recursively walk *method_body_node* to collect all method_invocation nodes,
-    returning a list of simple callee names (best-effort; no full resolution).
+    returning a list of (callee_name, receiver, receiver_type) tuples.
     """
-    callee_names: List[str] = []
-    _walk_for_invocations(method_body_node, source, callee_names)
-    return callee_names
+    field_map = fields or {}
+    invocations: List[Tuple[str, Optional[str], Optional[str]]] = []
+    _walk_for_invocations(method_body_node, source, invocations, field_map, class_name)
+    return invocations
 
 
-def _walk_for_invocations(node: Node, source: bytes, accumulator: List[str]) -> None:
-    """DFS walk over an AST sub-tree collecting method_invocation names."""
+def _walk_for_invocations(
+    node: Node,
+    source: bytes,
+    accumulator: List[Tuple[str, Optional[str], Optional[str]]],
+    fields: Dict[str, str],
+    class_name: Optional[str],
+) -> None:
+    """DFS walk over an AST sub-tree collecting method_invocation details."""
     if node.type == "method_invocation":
-        # method_invocation: [object '.'] methodName arguments
-        # The method name is an 'identifier' child; we want the last one before '('
         name_node: Optional[Node] = None
-        for child in node.children:
-            if child.type == "identifier":
-                name_node = child
+        receiver: Optional[str] = None
+        receiver_type: Optional[str] = None
+
+        object_node = getattr(node, "child_by_field_name", lambda f: None)("object")
+        method_name_node = getattr(node, "child_by_field_name", lambda f: None)("name")
+
+        if method_name_node is not None:
+            name_node = method_name_node
+        else:
+            for child in node.children:
+                if child.type == "identifier":
+                    name_node = child
+
+        if object_node is not None:
+            receiver_raw = _node_text(object_node, source).strip()
+            if receiver_raw.startswith("this."):
+                receiver = receiver_raw[5:].strip()
+            else:
+                receiver = receiver_raw
+            receiver_type = fields.get(receiver)
+            if not receiver_type and receiver == "this":
+                receiver_type = class_name
+        else:
+            receiver = "this"
+            receiver_type = class_name
+
         if name_node:
-            accumulator.append(_node_text(name_node, source))
+            callee_name = _node_text(name_node, source).strip()
+            accumulator.append((callee_name, receiver, receiver_type))
+
     for child in node.children:
-        _walk_for_invocations(child, source, accumulator)
+        _walk_for_invocations(child, source, accumulator, fields, class_name)
 
 
 # ---------------------------------------------------------------------------
@@ -267,15 +302,38 @@ def _parse_class_node(
         file_path=file_path,
     )
 
-    # Walk the class_body for method_declaration nodes
+    # Walk the class_body for field_declaration and method_declaration nodes
     class_body = _find_first_child_by_type(class_node, "class_body")
     if class_body is None:
         return class_info, calls
 
+    # Extract field definitions (field_name -> type_name)
+    fields: Dict[str, str] = {}
+    for child in class_body.children:
+        if child.type == "field_declaration":
+            type_node = _find_first_child_by_type(child, "type_identifier")
+            if not type_node:
+                type_node = _find_first_child_by_type(child, "generic_type")
+            if not type_node:
+                for sub in child.children:
+                    if "type" in sub.type:
+                        type_node = sub
+                        break
+            if type_node:
+                raw_type = _node_text(type_node, source).strip()
+                base_type = raw_type.split("<")[0].strip()
+                for decl in _find_children_by_type(child, "variable_declarator"):
+                    id_node = _find_first_child_by_type(decl, "identifier")
+                    if id_node:
+                        fname = _node_text(id_node, source).strip()
+                        fields[fname] = base_type
+
+    class_info.fields = fields
+
     for child in class_body.children:
         if child.type == "method_declaration":
             method_info, method_calls = _parse_method_node(
-                child, source, full_name, file_path
+                child, source, full_name, file_path, fields, class_name
             )
             if method_info:
                 class_info.methods.append(method_info)
@@ -289,6 +347,8 @@ def _parse_method_node(
     source: bytes,
     class_full_name: str,
     file_path: str,
+    fields: Optional[Dict[str, str]] = None,
+    class_name: Optional[str] = None,
 ) -> Tuple[Optional[MethodInfo], List[CallInfo]]:
     """
     Extract a MethodInfo from a method_declaration AST node, plus any
@@ -326,9 +386,14 @@ def _parse_method_node(
 
     # Collect method invocations within the body
     if body_node:
-        callee_names = _collect_method_invocations(body_node, source)
-        for callee_name in callee_names:
-            calls.append(CallInfo(caller_id=method_id, callee_name=callee_name))
+        invocations = _collect_method_invocations(body_node, source, fields, class_name)
+        for callee_name, receiver, receiver_type in invocations:
+            calls.append(CallInfo(
+                caller_id=method_id,
+                callee_name=callee_name,
+                receiver=receiver,
+                receiver_type=receiver_type,
+            ))
 
     return method_info, calls
 

@@ -1,5 +1,6 @@
 package com.qe.agent.integration;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,6 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -35,6 +37,11 @@ class TestGenerationIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @BeforeEach
+    void setUp() {
+        assertNotNull(mockMvc, "MockMvc should be injected by SpringBootTest");
+    }
 
     // =========================================================================
     // Input validation tests (no external dependencies)
@@ -77,13 +84,59 @@ class TestGenerationIntegrationTest {
     @DisplayName("POST /generate-tests with a non-existent .java file returns FILE_NOT_FOUND (400)")
     void generateTests_nonExistentFile_returnsFileNotFound() throws Exception {
         String body = """
-                {"targetClassName":"Ghost","targetFilePath":"/nonexistent/Ghost.java"}
+                {"targetClassName":"Ghost","targetFilePath":"/workspace/test-sandbox/Ghost.java"}
                 """;
         mockMvc.perform(post("/api/v1/generate-tests")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().is4xxClientError())
                 .andExpect(jsonPath("$.status").value("FILE_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("POST /generate-tests with a path outside allowed sandbox root returns INVALID_PATH (400)")
+    void generateTests_outsideSandboxRoot_returnsInvalidPath() throws Exception {
+        String body = """
+                {"targetClassName":"Ghost","targetFilePath":"/nonexistent/Ghost.java"}
+                """;
+        mockMvc.perform(post("/api/v1/generate-tests")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().is4xxClientError())
+                .andExpect(jsonPath("$.status").value("INVALID_PATH"));
+    }
+
+    @Test
+    @DisplayName("POST /generate-tests/batch with empty requests list returns 400")
+    void generateTestsBatch_emptyList_returns400() throws Exception {
+        String body = """
+                {"requests":[]}
+                """;
+        mockMvc.perform(post("/api/v1/generate-tests/batch")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("POST /generate-tests/batch with invalid paths aggregates results")
+    void generateTestsBatch_invalidPaths_aggregatesResults() throws Exception {
+        String body = """
+                {
+                  "requests": [
+                    {"targetClassName":"Ghost1","targetFilePath":"/nonexistent/Ghost1.java"},
+                    {"targetClassName":"Ghost2","targetFilePath":"/nonexistent/Ghost2.java"}
+                  ]
+                }
+                """;
+        mockMvc.perform(post("/api/v1/generate-tests/batch")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.failed").value(2))
+                .andExpect(jsonPath("$.passed").value(0))
+                .andExpect(jsonPath("$.results").isArray());
     }
 
     // =========================================================================
