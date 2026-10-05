@@ -265,3 +265,5 @@ qe-rag-system/
         ├── main/java/com/qe/demo/   # 8 source classes (UserService, BankAccount, MathUtils, etc.)
         └── test/java/com/qe/demo/   # JUnit 5 test files
 ```
+#   a u t o q e - e n g i n e  
+ 
